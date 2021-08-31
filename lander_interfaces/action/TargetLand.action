@@ -1,5 +1,0 @@
-int32 delay
----
-bool result
----
-float32 distance_to_target
