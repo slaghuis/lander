@@ -239,14 +239,10 @@ using namespace std::chrono_literals;
 
   rclcpp_action::GoalResponse TargetLanderNode::handle_goal(
     const rclcpp_action::GoalUUID & uuid,
-    std::shared_ptr<const TargetLand::Goal> goal)
+    std::shared_ptr<const TargetLand::Goal> )
   {
-    RCLCPP_INFO(this->get_logger(), "Received goal request with order %d", goal->delay);
+    RCLCPP_DEBUG(this->get_logger(), "Received goal request to land.");
     (void)uuid;
-    // Let's reject sequences that are over 9000
-    if (goal->delay > 60) {
-      return rclcpp_action::GoalResponse::REJECT;
-    }
     
     // Set the state machine to seeking state.
     seek();  // set_state(ST_SEEK);
@@ -277,7 +273,7 @@ using namespace std::chrono_literals;
     distance_to_target = 100.0;  // Initialise to save the loop.
 
     while (rclcpp::ok() && (distance_to_target > 0.3 )) {
-//    for (int i = 1; (i < 10) && rclcpp::ok(); ++i) {
+
       // Check if there is a cancel request
       if (goal_handle->is_canceling()) {
         result->result = false;
@@ -290,7 +286,6 @@ using namespace std::chrono_literals;
       float xy_error = sqrt(pow(last_pose->position.x,2) + pow(last_pose->position.y,2));
       distance_to_target = sqrt(pow(xy_error,2) + pow(last_pose->position.z,2));
       goal_handle->publish_feedback(feedback);
-      // RCLCPP_INFO(this->get_logger(), "Publish Feedback");
 
       loop_rate.sleep();
     }
