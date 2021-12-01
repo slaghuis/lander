@@ -1,5 +1,8 @@
+# Warning
+Do not use this code.  I am in the process of fundamentally rewriting it.  This time it will ue tf2 and aruco markers.  It is just a better option.
+
 # Vison-based-lander
-Receive guidance from a [Tracker Node](https://github.com/slaghuis/Tracker) and guides the drone to land there.  This node will consume and leverage topics with the xdrone nodes.
+Receive guidance from a Tracker node and guides the drone to land there.  This node will consume and leverage topics with the xdrone nodes.
 
 # Depends
 This node needs to run the [Tracker Node](https://github.com/slaghuis/Tracker) to do the landing target detection, and publish tracking messages.  Tracker messages are defined in the [Lander Interfaces](https://github.com/slaghuis/Lander_Interfaces) package.
