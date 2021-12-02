@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(target_lander)
+project(lander)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -20,16 +20,19 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(lander_interfaces REQUIRED)
 find_package(drone_interfaces REQUIRED)
-find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(OpenCV 4.2.0 REQUIRED)
+find_package(cv_bridge REQUIRED)
 
-add_executable(target_lander 
+add_executable(lander_node 
   src/target_lander_node.cpp
   src/target_lander_state.cpp
   src/pending_state.cpp
@@ -37,7 +40,7 @@ add_executable(target_lander
   src/approaching_state.cpp
   src/descending_state.cpp
   src/landing_state.cpp)
-ament_target_dependencies(target_lander 
+ament_target_dependencies(lander_node 
   rclcpp 
   rclcpp_action 
   std_msgs 
@@ -50,7 +53,28 @@ ament_target_dependencies(target_lander
   tf2_msgs
   tf2_geometry_msgs)
 
-target_include_directories(target_lander PRIVATE
+target_include_directories(lander_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
+
+add_executable(tracker_node 
+  src/tracker_node.cpp)
+ament_target_dependencies(tracker_node 
+  rclcpp 
+  std_msgs 
+  nav_msgs
+  sensor_msgs 
+  geometry_msgs 
+  tf2 
+  tf2_ros 
+  tf2_msgs
+  tf2_geometry_msgs
+  OpenCV
+  cv_bridge
+  lander_interfaces)
+
+target_include_directories(tracker_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
@@ -65,7 +89,8 @@ install(DIRECTORY
 )
 
 install(TARGETS
-  target_lander
+  lander_node
+  tracker_node
   DESTINATION lib/${PROJECT_NAME}) 
   
 ament_package()
