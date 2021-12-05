@@ -1,3 +1,5 @@
+#pragma once
+
 // Copyright 2021 Xeni Robotics
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,21 +14,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lander/state.hpp"
+// Some generic utility functions
 
-void PendingState::execute_mission() 
+inline double getDiff2Angles(const double x, const double y, const double c)
 {
-  //  Do nothing.  Light one up
-}
-
-
-void PendingState::abort()
-{
-  // Do nothing
-}
-
-bool PendingState::is_working() 
-{
-  return false;  // In pending state, sitting under a tree having a joint.
-}
+  // c can be PI (for radians) or 180.0 (for degrees);
+  double d =  fabs(fmod(fabs(x - y), 2*c));
+  double r = d > c ? c*2 - d : d;
   
+  double sign = ((x-y >= 0.0) && (x-y <= c)) || ((x-y <= -c) && (x-y> -2*c)) ? 1.0 : -1.0;
+  return sign * r;                                           
+
+}

@@ -9,8 +9,8 @@ def generate_launch_description():
         'config',
         'params.yaml'
         )
-        
-    node=Node(
+
+    lander_node=Node(
         package = 'lander',
         name = 'lander',
         executable = 'lander_node',
@@ -18,5 +18,14 @@ def generate_launch_description():
         emulate_tty=True,
         parameters = [config]
     )
-    ld.add_action(node)
+    tracker_node=Node(
+        package = 'lander',
+        name = 'tracker',
+        executable = 'tracker_node',
+        output="screen",
+        emulate_tty=True
+    )
+    ld.add_action(lander_node)
+    ld.add_action(tracker_node)
+
     return ld

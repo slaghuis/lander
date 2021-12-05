@@ -12,188 +12,151 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "target_lander/seeking_state.h"
-#include "target_lander/target_lander.h"
-
-#include <cmath> // sqrt, pow
-#include <complex> // complex numbers for coorinate rotation
-                   // An excellent explination of complex numbers at https://www.geeksforgeeks.org/geometry-using-complex-numbers-c-set-2/
-
-/* 
- * Seek the landing target.
-
+/* *********************************************************************************
+    Seek the landing target.
+  
     The general strategy here is adjust the altitude and the pose of the drone to 
     a safe flying height, and increase velocity towards the landing target.
-    The tracker node, which is constantly surveiling the ground for the
-    landing target, should start to provide target tracking estimates once we're
-    in proximity to the target. We'll use that as an indication that it's time
-    to transition to the APPROACH state of the flight program.
-*/
+    Once we are where the target should be we check to see if the target is found.
+    If not, we hang around untill a target is sighted.
+    With the target on sight, we transition to the APPROACH state.    
+* *********************************************************************************/
+#include "lander/state.hpp"
+#include "lander/lander_node.h"
+#include "lander/utils.hpp"
 
-using std::placeholders::_1;
-
-namespace TargetLander {
-
-  SeekingState::SeekingState(rclcpp::Node::SharedPtr node) 
-  : TargetLanderState(std::string("Seeking")), node_(node) {
-    
-    // Read the parameters  
-    rclcpp::Parameter target_local_position_param("target_local_position", std::vector<double>({}));
-
-    node_->get_parameter("target_local_position", target_local_position_param);    
-    node_->get_parameter("target_seek_altitude", target_seek_altitude_);
-    node_->get_parameter("approach_holddown", approach_holddown_);
-    node_->get_parameter("approach_speed", approach_speed_);
-    node_->get_parameter("approach_radius", approach_radius_);
-    node_->get_parameter("max_yaw_speed", max_yaw_speed_);
-    node_->get_parameter("camera_yaw_correction", camera_yaw_correction_);
-    node_->get_parameter("camera_vertical_fov", camera_vertical_fov_);
-
-    RCLCPP_ERROR(node_->get_logger(), "Ascending to %f meters", target_seek_altitude_);
-
-    target_local_position_ = target_local_position_param.as_double_array();
-    
-//    pid_x = std::make_shared<PID>(1.0, approach_speed_, -approach_speed_, 0.7, 0.00, 0.4);
-//    pid_z = std::make_shared<PID>(1.0, approach_speed_, -approach_speed_, 0.9, 0.00, 0.5);
-//    pid_yaw = std::make_shared<PID>(1.0, max_yaw_speed_, -max_yaw_speed_, 0.1, 0.01, 0.5);
-    
-    pid_x = std::make_shared<PID>(0.5, approach_speed_, -approach_speed_, 0.7, 0.00, 0.0);
-    pid_z = std::make_shared<PID>(0.5, 1.0, -1.0, 0.7, 0.00, 0.0);
-    pid_yaw = std::make_shared<PID>(0.5, max_yaw_speed_, -max_yaw_speed_, 0.7, 0.00, 0);  
-    
-    // Set up the hoddown timer
-    approach_holddown_timer = std::make_shared<HolddownTimer>(approach_holddown_);
-    
-    // Set up publisher for twist information (Velocities to make the drone move
-    twist_pub_ = node_->create_publisher<geometry_msgs::msg::Twist>("drone/cmd_vel", 10); 
+void SeekingState::execute_mission() 
+{
+  RCLCPP_INFO(node_->get_logger(), "Seek: Flying to target zone.");
   
-    // Set a callback timer
-    seek_timer_ = node_->create_wall_timer(
-      std::chrono::milliseconds(500), std::bind(&SeekingState::seek_timer_callback, this));
-      
-  }
-  
-  SeekingState::~SeekingState() {
-  }
-  
-  void SeekingState::pend( TargetLanderNode * lander)  {
-    lander->set_state(TargetLanderNode::ST_PEND);
-  }
-  
-  void SeekingState::approach( TargetLanderNode * lander)  {
-    lander->set_state(TargetLanderNode::ST_APPROACH);
-  }
-    
-  // was const TargetLanderNode & lander  
-  void SeekingState::handle_track_message(TargetLanderNode * lander, const lander_interfaces::msg::Track::SharedPtr msg, const geometry_msgs::msg::Pose::SharedPtr pose, const geometry_msgs::msg::Twist::SharedPtr twist) {
-        
-    double err_x, err_y;
-    double velocity;
-    if (msg->tracking.data) {  // Can see the target, use the camera observation to guide  
-      // Scale the numbers according on the altitude from the percentaes passed from the tracking node.
-      double scaling = pose->position.z * 2 * tan(camera_vertical_fov_/2);
-      double target_x = msg->position.x * scaling;
-      double target_y = msg->position.y * scaling;
-      velocity = sqrt(pow(twist->linear.x * scaling,2) + pow(twist->linear.y*scaling,2));
-            
-      // Rotate the tracking messages around the origin to compensate for the mount angle of the camera.
-      // No need to rotate the velocity, as we only use it to check for stability, hence direction is irrelevant.
-      complex<double> p(target_x, target_y);
-      complex<double> p_rotated = p * polar(1.0, (double)camera_yaw_correction_); //camera_yaw_correction_);      
-      err_x = (double)p_rotated.real();  
-      err_y = (double)p_rotated.imag();
-    } else {                   // Can't see the target, use the parameters as guidance 
-      err_x = pose->position.x - target_local_position_[0];
-      err_y = pose->position.y - target_local_position_[1];
-      velocity = 0;  // Not close enough to pass the "target is close" criteria
-    }
-    
-    double distance = sqrt(pow(err_x,2) + pow(err_y,2));
-    
-    bool target_is_stable = approach_holddown_timer->test(msg->tracking.data);
-    bool target_is_close = (distance < approach_radius_);
-    bool vehicle_is_stable = (velocity < approach_speed_);
-    
-    if( target_is_stable && target_is_close && vehicle_is_stable ) {
-      lander->approach();
-      
-      return;  // Explicit return to prevent fall through to rest of code.      
-    }        
-    
-    // RCLCPP_INFO(node_->get_logger(), "Calculating a setpoint");
-    
-    // Implement control logic to correct for velocity and position errors.    
-    // Landing target is in a world coordinate system, reltive to North and the landing target
-    // Drone flies in a body coordinate system.
-    // Strategy: adjust altitude to fly home altitude and adjust yaw to look at the target.
-    // If yaw is close enough, start increasing foreward velocity (x) whilst monitoring the yaw
-    // and altitude.
+  //Read the parameters needed in this object
+  node_->get_parameter("target_seek_altitude", target_seek_altitude_);
+  node_->get_parameter("max_yaw_speed", max_yaw_speed_);
+  node_->get_parameter("max_speed_xy", max_speed_xy_);
+  node_->get_parameter("max_speed_z", max_speed_z_);
+  node_->get_parameter("waypoint_radius_error", waypoint_radius_error_);
+  node_->get_parameter("yaw_threshold", yaw_threshold_);
+  node_->get_parameter("altitude_threshold", altitude_threshold_); 
    
-    // Orientation quaternion
-    tf2::Quaternion q(
-        pose->orientation.x,
-        pose->orientation.y,
-        pose->orientation.z,
-        pose->orientation.w);
+  // and the vector based parameters
+  rclcpp::Parameter pid_xy_settings_param = node_->get_parameter("pid_xy");
+  std::vector<double> pid_xy_settings = pid_xy_settings_param.as_double_array(); 
+  pid_x   = std::make_shared<PID>(0.5, max_speed_xy_, -max_speed_xy_, (float)pid_xy_settings[0], (float)pid_xy_settings[1], (float)pid_xy_settings[2]);
 
-    // 3x3 Rotation matrix from quaternion
-    tf2::Matrix3x3 m(q);
+  rclcpp::Parameter pid_z_settings_param = node_->get_parameter("pid_z");
+  std::vector<double> pid_z_settings = pid_z_settings_param.as_double_array(); 
+  pid_z   = std::make_shared<PID>(0.5, max_speed_z_, -max_speed_z_, (float)pid_z_settings[0], (float)pid_z_settings[1], (float)pid_z_settings[2]);
 
-    // Roll Pitch and Yaw from rotation matrix
-    double roll, pitch, yaw;
-    m.getRPY(roll, pitch, yaw);
-                    
-    // Calculate direction (desired yaw angle in radians) to the landing target
-    // NOTE:  -M_PI <= yaw <= M_PI
-     
-     double yaw_to_target = (err_x == 0.0) ? 0.0 : atan(err_y / err_x);
-     if (err_x > 0.0) {
-       if(err_y > 0.0) {
-         yaw_to_target -= M_PI;
-//         RCLCPP_WARN(node_->get_logger(), "[SEEKING] X>0 Y>0 MINUS PI: Yaw %f", yaw_to_target);
-       } else {
-         yaw_to_target += M_PI;
-//         RCLCPP_WARN(node_->get_logger(), "[SEEKING] X<0 Y>0 PLUS PI : Yaw %f", yaw_to_target);
-       }
-     }
-
-     setpoint.angular.x = 0.0;
-     setpoint.angular.y = 0.0;
-     setpoint.angular.z = pid_yaw->calculate( yaw_to_target, yaw);         // correct yaw
-
-     setpoint.linear.x = 0.0;
-     setpoint.linear.y = 0.0;  
-     setpoint.linear.z = pid_z->calculate(target_seek_altitude_, pose->position.z);  // correct altitude
-    
-     bool vehicle_is_high_enough = abs(pose->position.z - target_seek_altitude_) < 0.5;
-     bool vehicle_pose_is_good = abs(setpoint.angular.z) < 0.02; 
-     if(vehicle_is_high_enough && vehicle_pose_is_good) {      
-        // The PID will return a negative, as we are trying to close the distance down to 0.  (Unless we have overshot the target)
-        // for that reason we send a negative distance
-        setpoint.linear.x = pid_x->calculate(0.0, -distance);                  // fly closer to the target
-     }      
-              
-     RCLCPP_INFO(node_->get_logger(), "[SEEKING] setpoint: (%6.2f, %6.2f, %6.2f) speed: %6.2f  distance: %6.2f",
-                        setpoint.linear.x, setpoint.linear.y, setpoint.linear.z, velocity, distance);                
-
-  }
+  rclcpp::Parameter pid_yaw_settings_param = node_->get_parameter("pid_yaw");
+  std::vector<double> pid_yaw_settings = pid_yaw_settings_param.as_double_array(); 
+  pid_yaw   = std::make_shared<PID>(0.5, max_yaw_speed_, -max_yaw_speed_, (float)pid_yaw_settings[0], (float)pid_yaw_settings[1], (float)pid_yaw_settings[2]);
   
-    
-  void SeekingState::seek_timer_callback() {
-    
-    /*   Publish location setpoint once per control loop iteration.
-    *
-    *    For now, we have a static landing target position, so repeatedly setting
-    *    the same location setpoint is like beating a dead horse like beating a
-    *    dead horse like beating a dead horse like -- you get the idea.
-    *
-    *    But eventually we'll receive dynamic updates of the target position, and
-    *    then this will be more useful. Besides, PX4 requires a constant stream of
-    *    heartbeat messages, so this is not for naught.        
-    */
+  // Fly to where the target should be
+  fly_to_waypoint( node_->landing_target_position() );
+  
+  // Read the transform to see if the target is in view (i.e has been seen in the last second.
+  // If not, hang around here.  Maybe the flight controller will pick up a flat battery and land.
+  // What if the wind blows?  Maybe I can put x,y,z PID's down to hover right here?
+  rclcpp::Rate loop_rate(2);
+  while (! node_->target_is_close() ) {
+    RCLCPP_ERROR(node_->get_logger(), "Seek: Target is out of sight!");
+    loop_rate.sleep();
+  }
+  node_->TransitionTo(new ApproachingState);  
+}
+
+void SeekingState::abort()
+{
+  // Stabilise flight
+  node_->stop_movement();
+  
+  // Go sit under a tree till you are called 
+  node_->TransitionTo(new PendingState);
+}
+
+
+bool SeekingState::is_working() 
+{
+  return true;  // Only pending state gets to sit under a tree and do nothing.
+}
+  
+bool SeekingState::fly_to_waypoint(std::shared_ptr<geometry_msgs::msg::PoseStamped> wp) {
+    rclcpp::Rate loop_rate(2);
+
+    bool waypoint_is_close_, altitude_is_close_, pose_is_close_;
+    float target_x_, target_y_, target_z_;
+
+    target_x_ = wp->pose.position.x;
+    target_y_ = wp->pose.position.y;
+    target_z_ = target_seek_altitude_;                 //wp->pose.position.z  will crash us into the ground!
+   
+    geometry_msgs::msg::Twist setpoint = geometry_msgs::msg::Twist();
+    setpoint.linear.x = 0.0;
+    setpoint.linear.y = 0.0;
+    setpoint.linear.z = 0.0;
+    setpoint.angular.x = 0.0;
+    setpoint.angular.y = 0.0;
+    setpoint.angular.z = 0.0;
+
+    double x, y, z, w;
+    float err_x, err_y, err_z, err_dist;
+    double yaw_to_target;
+    double yaw_error;
+
+    // First correct the yaw        
+    pid_yaw->restart_control();
+
+    do {
+      node_->read_position(&x, &y, &z, &w);  // Current position according to tf2
+
+      err_x = target_x_ - x; 
+      err_y = target_y_ - y;
+      yaw_to_target = atan2(err_y, err_x);
       
-    twist_pub_->publish(setpoint);    
+      yaw_error = getDiff2Angles(yaw_to_target, w, M_PI);
+      pose_is_close_ = (fabs(yaw_error) < yaw_threshold_);
+      if (pose_is_close_) {
+        break;
+      }
+      setpoint.angular.z = pid_yaw->calculate(0, -yaw_error);         // correct yaw error down to zero  
+      
+      node_->set_velocity(setpoint);
+      loop_rate.sleep();  // Give the drone time to move
+    } while (!pose_is_close_);  
+
+    // Now that we are ponting, keep on adjusting yaw, but include altitude and foreward velocity
+    pid_x->restart_control();
+    pid_z->restart_control();
+    do {
+      node_->read_position(&x, &y, &z, &w);  // Current position according to tf2
+
+      err_x = target_x_ - x; 
+      err_y = target_y_ - y;
+      err_z = target_z_ - z;
+
+      err_dist = sqrt(pow(err_x,2) + pow(err_y,2));        
+      waypoint_is_close_ = (err_dist < waypoint_radius_error_);
+
+      altitude_is_close_ = ( abs(err_z) < altitude_threshold_);
     
+      yaw_to_target = atan2(err_y, err_x);      
+      yaw_error = getDiff2Angles(yaw_to_target, w, M_PI);
+      pose_is_close_ = (fabs(yaw_error) < yaw_threshold_);
+      
+      if (!(waypoint_is_close_ && altitude_is_close_)) {
+        setpoint.angular.z = pid_yaw->calculate(0, -yaw_error);         // correct yaw error down to zero  
+        setpoint.linear.z = pid_z->calculate(0, -err_z);                // correct altitude
+        setpoint.linear.x = pid_x->calculate(0, -err_dist);              // fly
+      } else {
+        // Stop motion
+        setpoint.angular.z = 0;
+        setpoint.linear.z = 0;
+        setpoint.linear.x = 0;
+      }         
+      node_->set_velocity(setpoint);
+      loop_rate.sleep();  // Give the drone time to move
+    }  while (!(waypoint_is_close_ && altitude_is_close_)); 
+    
+    return true;
+
   }
-  
-}  // Namespace

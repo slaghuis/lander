@@ -6,8 +6,6 @@ lander:
     approach_speed: 1.0
     approach_radius: 1.5
     max_yaw_speed: 0.25
-    camera_yaw_correction: 0.785398163
-    camera_vertical_fov: 0.851720675
     max_speed_xy: 1.0
     max_accel_xy: 0.1
     descend_radius: 0.33
