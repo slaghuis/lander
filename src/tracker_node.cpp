@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/*
-SetTarget.srv
-
-int64 target_num
----
-bool result
-*/
+/* *******************************************************************************************
+ * Use OpenCV to identify a ArUco landing target and publish the location of the discovered
+ * target via a transform.
+ * *******************************************************************************************/
 
 #include <inttypes.h>
 #include <memory>
@@ -51,6 +48,7 @@ bool result
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Vector3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_broadcaster.h>
 
 #ifdef TF2_CPP_HEADERS
   #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -101,6 +99,11 @@ private:
     std::string filename;
     this->get_parameter("camera_parameters_file", filename);
     this->get_parameter("marker_length", marker_length_);
+    
+    // Initialize the transform broadcaster
+    tf_broadcaster_ =
+      std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
     
     RCLCPP_INFO(this->get_logger(), "Reading camera calibration parameters from: %s", filename.c_str());
     bool readOk = readCameraParameters(filename, cameraMatrix, distCoeffs);
@@ -169,7 +172,7 @@ private:
       auto message = geometry_msgs::msg::PoseStamped();
       rclcpp::Time now = this->get_clock()->now();
       message.header.stamp = now;
-      message.header.frame_id = "base_camera";
+      message.header.frame_id = "landing_target";
 
       // Build identity rotation matrix as a cv::Mat
       cv::Mat rot(3, 3, CV_64FC1);
@@ -193,6 +196,29 @@ private:
         // message.pose.position.z = z;  
         RCLCPP_INFO(this->get_logger(), "Camera height = %.3f Sensor height = %.3f",tvecs[selected_index](2),z);
       } 
+      
+      // Wait, lets first publish a transform
+      geometry_msgs::msg::TransformStamped t;
+
+      // Read message content and assign it to
+      // corresponding tf variables
+      t.header.stamp = now;
+      t.header.frame_id = "base_camera";
+      t.child_frame_id = "landing_target";
+
+      t.transform.translation.x = message.pose.position.x;
+      t.transform.translation.y = message.pose.position.y;
+      t.transform.translation.z = message.pose.position.z;
+
+      t.transform.rotation.x = message.pose.orientation.x;
+      t.transform.rotation.y = message.pose.orientation.y;
+      t.transform.rotation.z = message.pose.orientation.z;
+      t.transform.rotation.w = message.pose.orientation.w;
+
+      // Send the transformation
+      tf_broadcaster_->sendTransform(t);
+
+      //  End of transorm
       
       if (found || (target_number_ == 0)) {
         pose_publisher_->publish(message); 
@@ -287,6 +313,8 @@ private:
   
   std::shared_ptr<tf2_ros::TransformListener> transform_listener_{nullptr};
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   
   int target_number_;
   

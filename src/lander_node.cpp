@@ -263,7 +263,7 @@ bool LanderServer::read_position(double *x, double *y, double *z, double *w)
 
 bool LanderServer::read_target_position(double *x, double *y, double *z, double *w)
 {
-  std::string from_frame = "base_camera"; 
+  std::string from_frame = "landing_target"; 
   std::string to_frame = map_frame_.c_str();
     
   geometry_msgs::msg::TransformStamped transformStamped;
@@ -303,7 +303,7 @@ bool LanderServer::read_target_position(double *x, double *y, double *z, double 
 
 bool LanderServer::target_is_close()
 {
-  std::string from_frame = "base_camera"; 
+  std::string from_frame = "landing_target"; 
   std::string to_frame = map_frame_.c_str();
     
   geometry_msgs::msg::TransformStamped transformStamped;
