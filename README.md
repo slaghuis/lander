@@ -1,4 +1,4 @@
-# Vison-based-lander
+# Vision-based-lander
 Subscribing to sensor_msgs/msg/image from a downward facing camera, this package will publish cmd_vel messages to move a drone to an Aruco target and effect landing through a action client.  A fancy way of describing vision based precision landing.
 
 Through active control over the whole landing process this code should be able to land a drone on its assigned marker in windy conditions.
