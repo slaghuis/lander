@@ -1,7 +1,7 @@
 # Vison-based-lander
-Subscribing to semsor_msgs/msg/image from a downward facing camera, this package will publish cmd_vel messages to move a drone to an Aruco target and effect landing through a action client.  A fancy way of describing vision based precision landing.
+Subscribing to sensor_msgs/msg/image from a downward facing camera, this package will publish cmd_vel messages to move a drone to an Aruco target and effect landing through a action client.  A fancy way of describing vision based precision landing.
 
-Through active control over the whole landing process this cod should be able to land a drone on its assigned marker in windy conditions.
+Through active control over the whole landing process this code should be able to land a drone on its assigned marker in windy conditions.
 
 The packages comprises two nodes:
 ## Tracker Node
@@ -15,13 +15,13 @@ Sends out cmd_vel commands to the [Drone Node](https://github.com/slaghuis/drone
 
 The code is structures as a finite state machine.  On accepting a Action Server request to land at a given coordinate, the state machine is moved from PENDING to SEEKING.
 ### Seeking State
-Flies toward the given coordinates at a parameterised approach alltitude, hoping to sight the landing target on arrival.  If the target is sighted, the state is changed to APPROACHING.  This type of flight will fly straight into a wall.  No collision avoidance is done.
+Flies toward the given coordinates (in the map frame) at a parameterised approach alltitude, hoping to sight the landing target on arrival.  If the target is sighted, the state is changed to APPROACHING.  This type of flight will fly straight into a wall.  No collision avoidance is done.
 ### Approaching State
-Reads the last transform passed from base_camera to landing_target the lander aims to minimise the positional error over the target, whilst maintaining the approach altitude.  If stability is achieved, the state is changed to DESCENDING.
+Reads the last transform passed between base_link and landing_target the lander aims to minimise the positional error over the target, whilst maintaining the approach altitude.  If stability is achieved, the state is changed to DESCENDING.  Flight is all in the base_link frame using a FLU orientation.
 ### Descending State
-Whilst maintaining position over the target, the altitude is reduced to a within a minimum of the landing target.  On achoving this minimum flight altitude, the state is changed to LANDING.
+Whilst maintaining position over the target, the altitude is reduced to a within a minimum of the landing target.  On acheiving this minimum flight altitude, the state is changed to LANDING. Flight is all in the base_link frame using a FLU orientation.
 ### Landing State
- Landing is tricky. Ground effect causes random perturbations in vehicle velocity, and we can't correct for that very well because we're so close to the ground we don't have much room to maneuver or margin for error. We just call the land service advertised by the [Drone Node](https://github.com/slaghuis/drone_mavsdk.git).  This will land and disarm the drone.  The state is returned to PENDING.
+Landing is tricky. Ground effect causes random perturbations in vehicle velocity, and we can't correct for that very well because we're so close to the ground we don't have much room to maneuver or margin for error. We just call the land service advertised by the [Drone Node](https://github.com/slaghuis/drone_mavsdk.git).  This will land and disarm the drone.  The state is returned to PENDING.
  
 # Depends
 This node needs the [Lander Interfaces](https://github.com/slaghuis/Lander_Interfaces) package.
@@ -29,4 +29,4 @@ Flight control is either being done by [Drone MAVSDK](https://github.com/slaghui
 Some camera node is needed to publish the sensor_msgs/msg/image message to detect Aruco Markers on. A simple option is [Camera Lite](https://github.com/slaghuis/camera_lite.git).  Camera lite describes the installation of OpenVC that is needed to detect the Aruco markers.
 
 # Warning
-This code is being tested.  It has not flown.
+This code is being tested.  It has not flown. (December 2021)
