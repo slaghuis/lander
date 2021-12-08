@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>lander</name>
-  <version>4.0.0</version>
+  <version>4.0.1</version>
   <description>Precision landing a drone on a Aruco marker</description>
   <maintainer email="eslaghuis@gmail.com">Eric Slaghuis</maintainer>
   <license>Apache 2.0 License</license>
