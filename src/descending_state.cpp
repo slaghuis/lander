@@ -14,6 +14,9 @@
 
 /* ****************************************************************************************
  * Descend towards the landing target, maintaining control over lateral movement
+ *  This node depends on keeping the landing target in the camera frame.  If the
+ *    target is lost, change back to Seeking state
+ *  All navigation is done in the base_link frame using a FLU coordinate frame 
  * ****************************************************************************************/
 #include "lander/state.hpp"
 #include "lander/lander_node.h"
@@ -70,9 +73,6 @@ bool DescendingState::is_working()
   
 bool DescendingState::correct_altitude() {  
   rclcpp::Rate loop_rate(2);
-   
-  double cx,cy,cz,cw;
-  double tx,ty,tz,tw;
   
   bool  pose_is_close, position_is_close, altitude_is_close;
     
@@ -91,17 +91,14 @@ bool DescendingState::correct_altitude() {
       // Have lost sight of the target
       return false;
     }
-    node_->read_position(&cx, &cy, &cz, &cw);  
-    node_->read_target_position(&tx, &ty, &tz, &tw);  
-      
-    yaw_error = getDiff2Angles(ty, cy, M_PI);
+ 
+    node_->read_target_position("base_link", &x_error, &y_error, &z_error, &yaw_error);  
+  
     pose_is_close = (fabs(yaw_error) < yaw_threshold_);
-    
-    x_error = (tx - cx);
-    y_error = (ty - cy);
+
     position_is_close = ( (fabs(x_error) < waypoint_radius_error_) && (fabs(x_error) < waypoint_radius_error_) );
     
-    z_error = (land_altitude_ - cz);
+    z_error = (z_error - land_altitude_);   // We are only descending to the land_altitude parameter
     altitude_is_close = fabs(z_error) < altitude_threshold_;
     
     if ( pose_is_close && position_is_close && altitude_is_close ) {

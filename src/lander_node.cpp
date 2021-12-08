@@ -301,6 +301,46 @@ bool LanderServer::read_target_position(double *x, double *y, double *z, double 
   return true;
 }
 
+bool LanderServer::read_target_position(std::string working_frame, double *x, double *y, double *z, double *w)
+{
+  std::string from_frame = "landing_target"; 
+  std::string to_frame = working_frame.c_str();
+    
+  geometry_msgs::msg::TransformStamped transformStamped;
+    
+  // Look up for the transformation between map and base_link frames
+  // and save the last position in the 'map' frame
+  try {
+    transformStamped = tf_buffer_->lookupTransform(
+      to_frame, from_frame,
+      tf2::TimePointZero);
+      *x = transformStamped.transform.translation.x;
+      *y = transformStamped.transform.translation.y;
+      *z = transformStamped.transform.translation.z;
+  } catch (tf2::TransformException & ex) {
+    RCLCPP_DEBUG(
+      this->get_logger(), "Could not transform %s to %s: %s",
+      to_frame.c_str(), from_frame.c_str(), ex.what());
+    return false;  
+  }
+    
+  // Orientation quaternion
+  tf2::Quaternion q(
+      transformStamped.transform.rotation.x,
+      transformStamped.transform.rotation.y,
+      transformStamped.transform.rotation.z,
+      transformStamped.transform.rotation.w);
+
+  // 3x3 Rotation matrix from quaternion
+  tf2::Matrix3x3 m(q);
+
+  // Roll Pitch and Yaw from rotation matrix
+  double roll, pitch; 
+  m.getRPY(roll, pitch, *w);
+   
+  return true;
+}
+
 bool LanderServer::target_is_close()
 {
   std::string from_frame = "landing_target"; 
