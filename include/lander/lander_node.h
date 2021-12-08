@@ -49,6 +49,7 @@ public:
   bool read_position(double *x, double *y, double *z);
   bool read_position(double *x, double *y, double *z, double *w);
   bool read_target_position(double *x, double *y, double *z, double *w);  
+  bool read_target_position(std::string working_frame, double *x, double *y, double *z, double *w);
   bool target_is_close();
   void set_velocity(geometry_msgs::msg::Twist setpoint);
   void stop_movement();
